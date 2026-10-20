@@ -1,0 +1,237 @@
+name: CI
+
+on:
+  # Branch pushes and PRs run CI directly. Tag pushes do not (the branches
+  # filter excludes tags).
+  push:
+    branches:
+      - "**"
+  pull_request:
+  # Lets a release workflow reuse this suite as a gating job.
+  workflow_call:
+
+# A newer push to the same branch or pull request cancels the run it
+# supersedes. Called from release.yml, github.workflow names the caller and
+# github.ref is the version tag, so each release gets a group of its own, and
+# a run for a tag is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# CI only checks out and reads the repo; drop every other default GITHUB_TOKEN
+# scope.
+permissions:
+  contents: read
+
+jobs:
+  # Single source of truth for the Crystal version: `crystal.version` in
+  # .project.yaml. The oldest version the shard supports is the one
+  # `crystal: ">= x.y.z"` in shard.yml names. Exposed as outputs so the
+  # container/install-crystal jobs can pin them (job-level `container:`/`with:`
+  # are evaluated before steps, so the values must come from another job).
+  crystal-version:
+    name: Resolve Crystal version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      oldest: ${{ steps.read.outputs.oldest }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: read
+        run: |
+          v=$(ruby -r yaml -e 'puts YAML.load_file(".project.yaml").dig("crystal", "version")')
+          test -n "$v"
+          oldest=$(ruby -r yaml -e 'puts YAML.load_file("shard.yml").fetch("crystal")[/\A>=\s*(\d+\.\d+\.\d+)\z/, 1]')
+          test -n "$oldest"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "oldest=$oldest" >> "$GITHUB_OUTPUT"
+          echo "Crystal version: $v, oldest supported: $oldest"
+
+  lint:
+    name: Format, Ameba & docs
+    runs-on: ubuntu-latest
+    needs: crystal-version
+    container: crystallang/crystal:${{ needs.crystal-version.outputs.version }}-alpine
+    steps:
+      - uses: actions/checkout@v7
+      # actions/cache archives lib/ with tar; Alpine ships only busybox tar,
+      # which fails the post-job save. Install GNU tar first.
+      - name: Install GNU tar for actions/cache
+        run: apk add --no-cache tar
+      # Alpine key so a musl-built lib/ is never restored into a glibc job.
+      - uses: actions/cache@v6
+        with:
+          path: lib
+          key: alpine-shards-${{ needs.crystal-version.outputs.version }}-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            alpine-shards-${{ needs.crystal-version.outputs.version }}-
+      - name: Install dependencies
+        run: shards install
+      - name: Check formatting
+        run: crystal tool format --check src spec examples
+      # Ameba ships no postinstall step, so shards install leaves only its
+      # sources; build the binary when it is missing.
+      - name: Build ameba
+        run: test -x lib/ameba/bin/ameba || crystal build lib/ameba/src/cli.cr -o lib/ameba/bin/ameba --release
+      - name: Run ameba
+        run: lib/ameba/bin/ameba
+      # The docs task is a rake task; the image has no Ruby. A change that
+      # breaks `crystal docs` then fails CI instead of going unnoticed.
+      - name: Install Ruby
+        run: apk add --no-cache ruby ruby-rake
+      - name: Build the API docs
+        run: rake docs
+
+  test-linux:
+    name: Test (Alpine ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    # Gate tests behind lint: it must pass before any test job starts.
+    needs: [crystal-version, lint]
+    container: crystallang/crystal:${{ needs.crystal-version.outputs.version }}-alpine
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      # GitHub ships the musl Node for JavaScript actions only for x64, so
+      # checkout and every other JS action can't run on arm64 Alpine.
+      # laverdet/alpine-arm64 installs a patched gcompat and masks
+      # /etc/os-release so GitHub falls back to the glibc Node. Must be the first
+      # step, before any JS action. https://github.com/laverdet/alpine-arm64
+      - uses: laverdet/alpine-arm64@v1
+        if: matrix.arch == 'arm64'
+
+      - uses: actions/checkout@v7
+
+      - name: Install GNU tar for actions/cache
+        run: apk add --no-cache tar
+
+      - uses: actions/cache@v6
+        with:
+          path: lib
+          key: alpine-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            alpine-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-
+
+      # The specs only need microtest, not ameba (that's the lint job).
+      - name: Install dependencies
+        run: shards install --skip-postinstall --skip-executables
+
+      - name: Run tests
+        run: crystal spec
+
+      # The build flags change what the tracing macros generate, so each
+      # variant needs its own compile. One architecture is enough.
+      - name: Run tests with timing compiled out
+        if: matrix.arch == 'amd64'
+        run: crystal spec -Dlogbuch_timing=off
+
+      - name: Run tests with tracing compiled out
+        if: matrix.arch == 'amd64'
+        run: crystal spec spec/logbuch/off_spec.cr -Dlogbuch=off
+
+      # The example check is a rake task; the image has no Ruby.
+      - name: Install Ruby
+        if: matrix.arch == 'amd64'
+        run: apk add --no-cache ruby ruby-rake
+
+      # The expected outputs are saved locally in .work/examples, not
+      # committed, so this runs each example, also with -Dlogbuch=off.
+      - name: Run the examples
+        if: matrix.arch == 'amd64'
+        run: rake examples:check
+
+  # The oldest Crystal version shard.yml allows, so a change that needs a newer
+  # compiler fails here instead of in a program that uses the shard. One
+  # platform and the default build are enough.
+  test-oldest:
+    name: Test (Crystal ${{ needs.crystal-version.outputs.oldest }}, Alpine amd64)
+    runs-on: ubuntu-latest
+    needs: [crystal-version, lint]
+    container: crystallang/crystal:${{ needs.crystal-version.outputs.oldest }}-alpine
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install GNU tar for actions/cache
+        run: apk add --no-cache tar
+
+      - uses: actions/cache@v6
+        with:
+          path: lib
+          key: alpine-amd64-${{ needs.crystal-version.outputs.oldest }}-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            alpine-amd64-${{ needs.crystal-version.outputs.oldest }}-
+
+      - name: Install dependencies
+        run: shards install --skip-postinstall --skip-executables
+
+      - name: Run tests
+        run: crystal spec
+
+  test-linux-glibc:
+    name: Test (Debian ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    # Only start the slower Debian/macOS jobs once the Alpine suite passes.
+    needs: [crystal-version, lint, test-linux]
+    container: crystallang/crystal:${{ needs.crystal-version.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: lib
+          key: debian-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            debian-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-
+
+      - name: Install dependencies
+        run: shards install --skip-postinstall --skip-executables
+
+      - name: Run tests
+        run: crystal spec
+
+  test-macos:
+    name: Test (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: [crystal-version, lint, test-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: amd64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ needs.crystal-version.outputs.version }}
+
+      - uses: actions/cache@v6
+        with:
+          path: lib
+          key: macos-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            macos-${{ matrix.arch }}-${{ needs.crystal-version.outputs.version }}-
+
+      - name: Install dependencies
+        run: shards install --skip-postinstall --skip-executables
+
+      # macOS: Crystal auto-selects mold, which Apple's clang rejects; force
+      # Apple's ld (matches the Rakefile).
+      - name: Run tests
+        run: crystal spec --link-flags=-fuse-ld=/usr/bin/ld

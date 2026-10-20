@@ -1,0 +1,12 @@
+.DS_Store
+.remember/
+.superpowers/
+.tmp/
+.work/
+*.dwarf
+*.tmp
+*~
+/bin/
+/lib/
+\#*\#
+tmp/

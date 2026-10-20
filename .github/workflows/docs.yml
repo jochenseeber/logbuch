@@ -1,0 +1,53 @@
+name: Docs
+
+# Builds the API docs and deploys them to GitHub Pages. release.yml calls it
+# for each release; run it by hand from main to publish the docs of main, such
+# as before the first release. The github-pages environment accepts only main
+# and v* tags, so a run from another branch is refused. The repository's Pages
+# source must be set to "GitHub Actions".
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish the API docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # Two deployments started close together run one after the other.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the Crystal version
+        id: crystal
+        run: echo "version=$(ruby -r yaml -e 'puts YAML.load_file(".project.yaml").dig("crystal", "version")')" >> "$GITHUB_OUTPUT"
+
+      # The shard has no runtime dependencies, so the docs need no shards
+      # install; `shards`, which `Logbuch::VERSION` runs to read the version
+      # from shard.yml, comes with Crystal.
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ steps.crystal.outputs.version }}
+
+      - name: Build the API docs
+        run: rake docs
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: .tmp/docs
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,66 @@
+name: Release
+
+# Publishes a GitHub release for each version tag `rake release` creates, such
+# as v1.2.3, once the CI suite passes on the tagged commit. Its notes are the
+# version's section of CHANGELOG.md, which `rake release` writes on that commit.
+# A release without a suffix also publishes the API docs to GitHub Pages.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+# The CI jobs only read the repo; the release job asks for more below.
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish the release
+    needs: ci
+    runs-on: ubuntu-latest
+    # Creating a release writes to the repository's contents.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # The release commit sets shard.yml to the tagged version; a tag set by
+      # hand on another commit would publish the wrong one.
+      - name: Check the tag against shard.yml
+        run: |
+          version=$(ruby -r yaml -e 'puts YAML.load_file("shard.yml").fetch("version")')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::shard.yml has version $version, but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      # The runner image has Ruby and Rake; the rake tasks need nothing else.
+      - name: Write the release notes
+        run: rake "release:notes[${GITHUB_REF_NAME#v}]" > "$RUNNER_TEMP/notes.md"
+
+      # A tag with a suffix, such as v1.2.0-rc.1, is published as a prerelease.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}"
+
+  # Pages shows one version of the docs, so they follow the newest release; a
+  # prerelease leaves the last release's docs in place.
+  docs:
+    name: Docs
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml

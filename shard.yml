@@ -1,0 +1,20 @@
+name: logbuch
+version: 1.0.0-dev
+description: Method tracing for Crystal. Annotate a method and its calls show up in the log.
+
+authors:
+  - Jochen Seeber <jochen@seeber.me>
+
+license: MIT
+repository: https://github.com/jochenseeber/logbuch
+documentation: https://jochenseeber.github.io/logbuch/
+
+crystal: ">= 1.21.0"
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: "~> 1.7"
+  microtest:
+    github: Ragmaanir/microtest
+    version: "~> 1.2"
