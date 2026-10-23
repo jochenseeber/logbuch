@@ -1007,6 +1007,35 @@ and the log of its defining type, also when the subclass has a `Log` or a
 logs `Base#foo` under `base`. To log it as the subclass, override it there with
 its own `@[Logged]` and call `super`; logbuch then logs only the override.
 
+The wrapper calls the traced method with `previous_def`. Crystal 1.22 looks up
+the constants of a method reached through `previous_def` from the class it is
+called on, not from the namespace that defines the method. So a traced method
+that names a constant relative to its own namespace, in its body, its return
+type or a parameter type, fails the build with `undefined constant` once it is
+called on a subclass, or through a class including its module, that lives in
+another namespace. Any method that calls `previous_def` fails the same way,
+without logbuch too. Name such a constant from the top level instead:
+
+```crystal
+module Helper
+  record Item, name : String
+
+  class Base
+    include Logbuch::Annotations
+
+    @[Logged]
+    def make : ::Helper::Item # `Item` fails for Other::Sub.new.make
+      ::Helper::Item.new("x")
+    end
+  end
+end
+
+module Other
+  class Sub < Helper::Base
+  end
+end
+```
+
 logbuch cannot see a private top-level module, the modules inside it, or a type
 that your own `macro finished` defines, so it neither traces their `@[Logged]`
 methods nor fails the build for them. Add `include Logbuch::Annotations` to
