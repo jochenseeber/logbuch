@@ -71,20 +71,24 @@ Treat yourself as the senior engineer responsible for the final result.
   types and for objects; `fields.cr` also replaces `Reference#inspect`,
   `Struct#inspect` and their `pretty_print`, which mask an opted-in type's
   fields by its `@[LogType(inspect:)]` in every build and call `previous_def`
-  for any other type. The stdlib collections in `COLLECTION_TYPES` (`Deque`,
-  `Set`) and value types in `VALUE_TYPES` (`UUID`, `URI`, `Path` and such),
-  which not every program has, get theirs from a top-level `macro finished` in
-  `values.cr`, only when `parse_type` resolves the name to that class or struct
-  and it has no `to_trace` yet, a generic one reopened with its own type
-  parameters; never require their libraries or name them outside that hook (see
-  the prelude rule under Conventions). `src/logbuch/field_rules.cr` holds the
-  field detail rules both `Reference` and `Struct` expand, in `to_trace`, in
-  `__logbuch_identity`, which writes the identity, and in `__logbuch_key`,
-  which writes it from its `:id` fields (a hash key, converted at `Id`, logs it
-  too), `__convert_as`, which expands a `@[LogAs]` into the conversion of a
-  field or, from `__wrap_methods`, a parameter, `__check_log_as`, which checks
-  a `@[LogAs]` on a parameter or field, `__check_limit_target`, which reads
-  `COLLECTION_TYPES` and `VALUE_TYPES` as text, and `__check_fields`.
+  for any other type. Each def there that expands `__object_to_trace` names
+  `{% @type %}` in its own body: Crystal builds a def per concrete type only
+  when its body uses `@type` in macro code, else once for a virtual parent
+  type, whose fields an object of a subclass would then show. The stdlib
+  collections in `COLLECTION_TYPES` (`Deque`, `Set`) and value types in
+  `VALUE_TYPES` (`UUID`, `URI`, `Path` and such), which not every program has,
+  get theirs from a top-level `macro finished` in `values.cr`, only when
+  `parse_type` resolves the name to that class or struct and it has no
+  `to_trace` yet, a generic one reopened with its own type parameters; never
+  require their libraries or name them outside that hook (see the prelude rule
+  under Conventions). `src/logbuch/field_rules.cr` holds the field detail rules
+  both `Reference` and `Struct` expand, in `to_trace`, in `__logbuch_identity`,
+  which writes the identity, and in `__logbuch_key`, which writes it from its
+  `:id` fields (a hash key, converted at `Id`, logs it too), `__convert_as`,
+  which expands a `@[LogAs]` into the conversion of a field or, from
+  `__wrap_methods`, a parameter, `__check_log_as`, which checks a `@[LogAs]` on
+  a parameter or field, `__check_limit_target`, which reads `COLLECTION_TYPES`
+  and `VALUE_TYPES` as text, and `__check_fields`.
 - `src/logbuch/annotations.cr`: `Logbuch::Annotations`, which defines `Logged`
   for methods, `LogAs` for parameters and fields, `LogError` and `LogAccept`
   for traced methods, and `LogType` for types. logbuch never includes it at the

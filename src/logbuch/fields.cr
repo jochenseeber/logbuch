@@ -12,6 +12,12 @@ require "./values"
 # from its instance variables by its field rules; any other type is logged with
 # `inspect`. At `Detail::Id`, in a cycle and past the depth limit, an object is
 # logged as its identity. See `Logbuch.__object_to_trace`.
+#
+# Each def that expands `__object_to_trace` names `@type` in macro code of its
+# own, `{% @type %}`: only that makes Crystal build it once per concrete type.
+# Without it, a call through a variable of a parent type, the virtual
+# `Parent+`, expands the macro once for `Parent`, and an object of a subclass
+# is shown with its parent's fields.
 
 # :nodoc:
 class Object
@@ -31,16 +37,19 @@ class Reference
   # logbuch only with the fields its `inspect:` detail shows, `Summary` by
   # default, `:redacted` ones as `"***"`. See `Logbuch.__object_to_trace`.
   def inspect(io : IO) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def pretty_print(pp) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def to_trace(tracer : Logbuch::Tracer) : Log::Metadata::Value
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
@@ -64,11 +73,13 @@ class Reference
   # Writes the identity of this object without `:id` fields, `#<Type:0x…>`
   # or its `inspect` text, to *io*. See `Tracer#__identity`.
   def __logbuch_identity(tracer : Logbuch::Tracer, io : IO, held : Bool) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def __logbuch_key(tracer : Logbuch::Tracer, held : Bool = false) : Log::Metadata::Value?
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 end
@@ -79,16 +90,19 @@ struct Struct
   # logbuch only with the fields its `inspect:` detail shows, `Summary` by
   # default, `:redacted` ones as `"***"`. See `Logbuch.__object_to_trace`.
   def inspect(io : IO) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def pretty_print(pp) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def to_trace(tracer : Logbuch::Tracer) : Log::Metadata::Value
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
@@ -111,11 +125,13 @@ struct Struct
   # Writes the identity of this struct without `:id` fields, `#<Type>` or
   # its `inspect` text, to *io*. See `Tracer#__identity`.
   def __logbuch_identity(tracer : Logbuch::Tracer, io : IO, held : Bool) : Nil
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 
   # :nodoc:
   def __logbuch_key(tracer : Logbuch::Tracer, held : Bool = false) : Log::Metadata::Value?
+    {% @type %}
     ::Logbuch.__object_to_trace
   end
 end

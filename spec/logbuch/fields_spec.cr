@@ -337,6 +337,60 @@ module InspectSpec
   end
 end
 
+# Types reached through a variable of their parent's type, which Crystal
+# types as the virtual `Shape+` or `Point+`, not as the subclass.
+module VirtualSpec
+  # Not opted in.
+  class Shape
+    getter sides = 4
+  end
+
+  # Not opted in either.
+  class Square < Shape
+    getter size = 2
+  end
+
+  # Opted in by its own `@[LogAs]`, unlike its parent.
+  class Tagged < Shape
+    @[Logbuch::Annotations::LogAs(:summary)]
+    getter tag = "t"
+  end
+
+  # Opted in by an `:id` field its parent lacks.
+  class Keyed < Shape
+    @[Logbuch::Annotations::LogAs(:id)]
+    getter key = "k1"
+  end
+
+  # Writes its own `inspect`.
+  class Drawn < Shape
+    def inspect(io : IO) : Nil
+      io << "drawn"
+    end
+  end
+
+  abstract struct Point
+  end
+
+  # Not opted in.
+  struct Flat < Point
+    getter x = 1
+  end
+
+  # Opted in by its own `@[LogAs]`.
+  struct Pinned < Point
+    getter x = 1
+    @[Logbuch::Annotations::LogAs(:redacted)]
+    getter pin = "1234"
+  end
+
+  # Opted in by an `:id` field.
+  struct Coded < Point
+    @[Logbuch::Annotations::LogAs(:id)]
+    getter code = "c1"
+  end
+end
+
 # The `inspect` text of *value* with each object id replaced by `0x…`.
 def inspected(value) : String
   value.inspect.gsub(/0x[0-9a-f]+/, "0x…")
@@ -554,5 +608,51 @@ describe MaskedInspect do
   test "inspect: takes a detail and fails on a type with an inspect of its own" do
     assert compile_error("inspect_unknown_detail").to_s.includes?("logbuch: inspect: takes :off, :id, :summary or :full, on @[LogType] of Offender")
     assert compile_error("inspect_own_inspect").to_s.includes?("logbuch: inspect: has no effect on Offender, which has an inspect of its own, on @[LogType] of Offender")
+  end
+end
+
+describe VirtualReceiver do
+  test "inspect and pp through a parent variable show the subclass and its fields" do
+    shape = VirtualSpec::Square.new.as(VirtualSpec::Shape)
+    assert inspected(shape) == "#<VirtualSpec::Square:0x… @sides=4, @size=2>"
+    text = String.build { |io| PrettyPrint.format(shape, io, 79) }
+    assert text.gsub(/0x[0-9a-f]+/, "0x…") == "#<VirtualSpec::Square:0x… @sides=4, @size=2>"
+  end
+
+  test "an opted-in subclass through a parent variable is masked and converted by its fields" do
+    shape = VirtualSpec::Tagged.new.as(VirtualSpec::Shape)
+    assert inspected(shape) == %(#<VirtualSpec::Tagged:0x… @sides=4, @tag="t">)
+    assert Logbuch.convert(shape, detail: :full).as_h == {"sides" => Log::Metadata::Value.new(4), "tag" => Log::Metadata::Value.new("t")}
+  end
+
+  test "a subclass's own inspect through a parent variable wins" do
+    shape = VirtualSpec::Drawn.new.as(VirtualSpec::Shape)
+    assert shape.inspect == "drawn"
+    assert Logbuch.convert(shape, detail: :full).as_s == "drawn"
+  end
+
+  # Past the depth limit, the tracer reads the identity of the value as it is
+  # typed, `Shape+`, not through the subclass's `to_trace`.
+  test "the identity of a subclass through a parent variable is its own" do
+    keyed = with_max_depth(0) { Logbuch.convert(VirtualSpec::Keyed.new.as(VirtualSpec::Shape), detail: :full) }
+    assert keyed.as_s == "k1"
+    tagged = with_max_depth(0) { Logbuch.convert(VirtualSpec::Tagged.new.as(VirtualSpec::Shape), detail: :full) }
+    assert tagged.as_s.gsub(/0x[0-9a-f]+/, "0x…") == "#<VirtualSpec::Tagged:0x…>"
+  end
+
+  test "a struct through an abstract parent variable is shown and converted by its own type" do
+    flat = VirtualSpec::Flat.new.as(VirtualSpec::Point)
+    assert flat.inspect == "VirtualSpec::Flat(@x=1)"
+    assert String.build { |io| PrettyPrint.format(flat, io, 79) } == "VirtualSpec::Flat(@x=1)"
+    pinned = VirtualSpec::Pinned.new.as(VirtualSpec::Point)
+    assert pinned.inspect == %(VirtualSpec::Pinned(@x=1, @pin="***"))
+    assert Logbuch.convert(pinned, detail: :full).as_h == {"x" => Log::Metadata::Value.new(1), "pin" => Log::Metadata::Value.new("***")}
+  end
+
+  test "the identity of a struct through an abstract parent variable is its own" do
+    pinned = with_max_depth(0) { Logbuch.convert(VirtualSpec::Pinned.new.as(VirtualSpec::Point), detail: :full) }
+    assert pinned.as_s == "#<VirtualSpec::Pinned>"
+    coded = with_max_depth(0) { Logbuch.convert(VirtualSpec::Coded.new.as(VirtualSpec::Point), detail: :full) }
+    assert coded.as_s == "c1"
   end
 end
