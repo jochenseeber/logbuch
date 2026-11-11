@@ -65,6 +65,9 @@
     "markdownlint.config": {
         "MD024": {
             "siblings_only": true
+        },
+        "MD041": {
+            "allow_preamble": true
         }
     },
     "rdbg.rubyVersionManager": "rbenv",
