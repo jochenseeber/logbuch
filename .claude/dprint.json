@@ -1,0 +1,9 @@
+{
+  "indentWidth": 2,
+  "json": {},
+  "newLineKind": "lf",
+  "plugins": [
+    "https://plugins.dprint.dev/json-0.21.3.wasm"
+  ],
+  "useTabs": false
+}
