@@ -1,3 +1,5 @@
+![logbuch, structured logging for Crystal](artwork/logbuch-banner.jpg)
+
 # logbuch
 
 [![CI](https://github.com/jochenseeber/logbuch/actions/workflows/ci.yml/badge.svg)](https://github.com/jochenseeber/logbuch/actions/workflows/ci.yml)
