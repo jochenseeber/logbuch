@@ -170,6 +170,8 @@ Treat yourself as the senior engineer responsible for the final result.
   GitHub Pages through `docs.yml`, which can also be run by hand from `main` to
   publish the docs of `main`. `ci.yml` cancels a run that a newer push to the
   same branch or pull request supersedes, never one for a tag.
+  `scheduled.yml` runs the specs every Monday against the `latest` Crystal
+  image, unpinned, which Awesome Crystal requires of a listed shard.
 
 ## Conventions
 

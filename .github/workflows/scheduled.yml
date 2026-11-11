@@ -1,0 +1,38 @@
+name: Scheduled
+
+# Runs the suite every week against the latest Crystal release, so a new
+# compiler that breaks logbuch shows up without a push. ci.yml tests the
+# version pinned in .project.yaml and the oldest one shard.yml allows; this
+# workflow follows whatever `latest` is. GitHub disables scheduled workflows in
+# a repository without activity for 60 days; run it by hand from the Actions
+# tab to check now.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-latest:
+    name: Test (latest Crystal, Alpine amd64)
+    runs-on: ubuntu-latest
+    container: crystallang/crystal:latest-alpine
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show the Crystal version
+        run: crystal --version
+
+      - name: Install dependencies
+        run: shards install --skip-postinstall --skip-executables
+
+      - name: Run tests
+        run: crystal spec
+
+      - name: Run tests with timing compiled out
+        run: crystal spec -Dlogbuch_timing=off
+
+      - name: Run tests with tracing compiled out
+        run: crystal spec spec/logbuch/off_spec.cr -Dlogbuch=off
