@@ -192,7 +192,7 @@ module Crystal
     # Define the task that builds the API docs. It removes the previous output
     # first, so no page of a removed type is left behind. `crystal docs` does
     # not link, so it needs no link flags. The README is the docs' index page,
-    # so the examples and the banner it links relatively are copied next to it.
+    # so the banner it shows is copied next to it; its links are absolute.
     def define_docs_task
       CLEAN.include(DOCS_DIR)
 
@@ -200,7 +200,6 @@ module Crystal
       task "docs" do
         rm_rf DOCS_DIR
         sh "crystal", "docs", "--output=#{DOCS_DIR}", "--project-name=#{name}", "--project-version=#{version}"
-        cp_r examples_dir, DOCS_DIR
         mkdir_p File.join(DOCS_DIR, "artwork")
         cp "artwork/logbuch-banner.jpg", File.join(DOCS_DIR, "artwork")
       end

@@ -1,6 +1,7 @@
 # Agent Notes
 
-Usage, installation and development tasks are documented in `README.md`.
+Usage and installation are documented in `README.md`, the annotations and
+options in `GUIDE.md`, and development tasks in `CONTRIBUTING.md`.
 
 ## General
 

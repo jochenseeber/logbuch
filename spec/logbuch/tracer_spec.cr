@@ -128,7 +128,7 @@ class Masked
 end
 
 # A value type of the program that logs its text, cut to the length limit
-# the value has, as the README shows.
+# the value has, as GUIDE.md shows.
 struct TraceSku
   def initialize(@code : String)
   end
